@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Electricity Outage Detection & Restoration System</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>SmartGrid Ops</h1>
+          <span>Outage & Restoration</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <a href="#dashboard" class="nav-item active" data-tab="dashboard">
+          <span class="icon">📊</span> Dashboard
+        </a>
+        <a href="#topology" class="nav-item" data-tab="topology">
+          <span class="icon">🗺️</span> Visual Grid Map
+        </a>
+        <a href="#nodes" class="nav-item" data-tab="nodes">
+          <span class="icon">🏢</span> Network Nodes
+        </a>
+        <a href="#feeders" class="nav-item" data-tab="feeders">
+          <span class="icon">🔌</span> Feeder Lines
+        </a>
+        <a href="#faults" class="nav-item" data-tab="faults">
+          <span class="icon">⚠️</span> Fault Management
+        </a>
+        <a href="#outages" class="nav-item" data-tab="outages">
+          <span class="icon">🔍</span> Outage Analysis
+        </a>
+        <a href="#restoration" class="nav-item" data-tab="restoration">
+          <span class="icon">📋</span> Priority Queue
+        </a>
+        <a href="#teams" class="nav-item" data-tab="teams">
+          <span class="icon">👷</span> Repair Teams
+        </a>
+        <a href="#backups" class="nav-item" data-tab="backups">
+          <span class="icon">🔄</span> Approved Backups
+        </a>
+        <a href="#history" class="nav-item" data-tab="history">
+          <span class="icon">📜</span> History & Audit
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="api-status" id="backendStatus">
+          <span class="status-dot online"></span>
+          <span>Backend Connected (:8080)</span>
+        </div>
+        <small class="version-tag">Java 26 • Spring Boot • MySQL</small>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Header -->
+      <header class="top-header">
+        <div class="page-title">
+          <h2 id="currentSectionTitle">Grid Overview Dashboard</h2>
+          <p id="currentSectionSubtitle">Real-time distribution topology, BFS outage detection & priority restoration</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-outline" id="refreshAllBtn" title="Refresh data from server">
+            🔄 Refresh Grid
+          </button>
+          <button class="btn btn-primary" id="openReportFaultModalBtn">
+            + Report Feeder Fault
+          </button>
+        </div>
+      </header>
+
+      <!-- Global Simulation Disclaimer Notice -->
+      <div class="simulation-banner">
+        <span class="banner-badge">SIMULATION SYSTEM</span>
+        <span>Analyzes distribution network graph connectivity and topological reachability. Does not compute real-world electrical load flow or switching transients.</span>
+      </div>
+
+      <!-- Notification Toast Container -->
+      <div id="toastContainer" class="toast-container"></div>
+
+      <!-- TAB 1: Dashboard Overview -->
+      <section id="tab-dashboard" class="tab-pane active">
+        <!-- KPI Cards Grid -->
+        <div class="kpi-grid">
+          <div class="kpi-card" id="kpiHealthCard">
+            <div class="kpi-label">Grid Health Index</div>
+            <div class="kpi-value" id="kpiHealthValue">100.0%</div>
+            <div class="kpi-sub" id="kpiGridStatus">Status: NORMAL</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Active Sources</div>
+            <div class="kpi-value" id="kpiActiveSources">0 / 0</div>
+            <div class="kpi-sub" id="kpiTotalNodes">0 total nodes registered</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Feeder Lines</div>
+            <div class="kpi-value" id="kpiFeeders">0 / 0</div>
+            <div class="kpi-sub" id="kpiFailedFeeders">0 failed lines</div>
+          </div>
+          <div class="kpi-card alert-card" id="kpiOutageCard">
+            <div class="kpi-label">Disconnected Consumers</div>
+            <div class="kpi-value text-danger" id="kpiAffectedConsumers">0</div>
+            <div class="kpi-sub text-danger" id="kpiAffectedCritical">0 critical facilities affected</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Active Faults</div>
+            <div class="kpi-value" id="kpiActiveFaults">0</div>
+            <div class="kpi-sub" id="kpiQueuedJobs">0 jobs in PriorityQueue</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Repair Teams</div>
+            <div class="kpi-value" id="kpiTeamsAvailable">0 Available</div>
+            <div class="kpi-sub" id="kpiTeamsBusy">0 currently dispatched</div>
+          </div>
+        </div>
+
+        <!-- Dashboard Split View -->
+        <div class="dashboard-split">
+          <!-- Live Topology Mini-Viewer -->
+          <div class="card flex-2">
+            <div class="card-header">
+              <h3>Live Network Distribution Topology</h3>
+              <div class="topology-legend">
+                <span class="legend-item"><span class="dot dot-source"></span> Active Source</span>
+                <span class="legend-item"><span class="dot dot-critical"></span> Critical Area</span>
+                <span class="legend-item"><span class="dot dot-general"></span> General Area</span>
+                <span class="legend-item"><span class="dot dot-working"></span> Working Line</span>
+                <span class="legend-item"><span class="dot dot-failed"></span> Failed Line</span>
+                <span class="legend-item"><span class="dot dot-backup"></span> Backup Line</span>
+              </div>
+            </div>
+            <div class="card-body topology-card-body">
+              <div class="canvas-wrapper">
+                <svg id="networkTopologySvg" class="network-svg" viewBox="0 0 850 680" preserveAspectRatio="xMidYMid meet"></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Urgent Priority Queue Summary -->
+          <div class="card flex-1">
+            <div class="card-header">
+              <h3>Restoration Priority Queue</h3>
+              <a href="#restoration" class="btn-link" onclick="switchTab('restoration')">View All</a>
+            </div>
+            <div class="card-body">
+              <p class="section-desc">Ordered by Critical Facilities &gt; Consumers &gt; FIFO.</p>
+              <div id="dashboardQueueList" class="priority-list-mini">
+                <div class="empty-state">No active restoration jobs. Grid is healthy.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: Full Interactive Visual Grid Map -->
+      <section id="tab-topology" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Interactive Network Grid Topology</h3>
+              <p class="section-desc">Click any node or feeder line to inspect attributes, toggle operational status, or review energization path.</p>
+            </div>
+            <div class="header-actions">
+              <button class="btn btn-outline btn-sm" id="btnFitMap">Reset View</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="canvas-wrapper full-map-wrapper">
+              <svg id="networkTopologySvgFull" class="network-svg" viewBox="0 0 850 680" preserveAspectRatio="xMidYMid meet"></svg>
+            </div>
+            <div id="topologyDetailsPanel" class="topology-details-panel hidden">
+              <!-- Selected Element Inspector -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: Network Nodes Management -->
+      <section id="tab-nodes" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Network Nodes & Substations</h3>
+              <p class="section-desc">Manage substations, consumer areas, capacity, and critical lifeline tags.</p>
+            </div>
+            <button class="btn btn-primary" id="openAddNodeModalBtn">+ Add New Node</button>
+          </div>
+          <div class="card-body">
+            <!-- Filter Bar -->
+            <div class="filter-bar">
+              <input type="text" id="nodeSearchInput" class="form-control" placeholder="Search by Node ID or Name...">
+              <select id="nodeTypeFilter" class="form-control">
+                <option value="">All Types</option>
+                <option value="SUBSTATION">Substations</option>
+                <option value="CONSUMER_AREA">Consumer Areas</option>
+              </select>
+              <select id="nodeStatusFilter" class="form-control">
+                <option value="">All Statuses</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="INACTIVE">INACTIVE</option>
+              </select>
+            </div>
+
+            <!-- Nodes Table -->
+            <div class="table-responsive">
+              <table class="data-table" id="nodesTable">
+                <thead>
+                  <tr>
+                    <th>Node ID</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Classification / Details</th>
+                    <th>Consumers</th>
+                    <th>Status</th>
+                    <th>Grid State</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="nodesTableBody">
+                  <tr><td colspan="8" class="text-center">Loading network nodes...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: Feeder Lines Management -->
+      <section id="tab-feeders" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Distribution Feeder Lines</h3>
+              <p class="section-desc">Manage transmission cables, capacities, operational health, and backup designations.</p>
+            </div>
+            <button class="btn btn-primary" id="openAddFeederModalBtn">+ Add Feeder Line</button>
+          </div>
+          <div class="card-body">
+            <!-- Filter Bar -->
+            <div class="filter-bar">
+              <input type="text" id="feederSearchInput" class="form-control" placeholder="Search feeder ID, name, or node...">
+              <select id="feederStatusFilter" class="form-control">
+                <option value="">All Statuses</option>
+                <option value="WORKING">WORKING</option>
+                <option value="FAILED">FAILED</option>
+              </select>
+              <select id="feederBackupFilter" class="form-control">
+                <option value="">All Types</option>
+                <option value="false">Primary Lines</option>
+                <option value="true">Backup Lines</option>
+              </select>
+            </div>
+
+            <!-- Feeders Table -->
+            <div class="table-responsive">
+              <table class="data-table" id="feedersTable">
+                <thead>
+                  <tr>
+                    <th>Feeder ID</th>
+                    <th>Name</th>
+                    <th>Connection</th>
+                    <th>Capacity / Length</th>
+                    <th>Type</th>
+                    <th>Operating Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="feedersTableBody">
+                  <tr><td colspan="7" class="text-center">Loading feeder lines...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: Fault Management -->
+      <section id="tab-faults" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Fault Management & Reporting</h3>
+              <p class="section-desc">Report feeder line disruptions, inspect fault causes, and view resolution statuses.</p>
+            </div>
+            <button class="btn btn-primary" id="openAddFaultBtn2">+ Report Feeder Failure</button>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="data-table" id="faultsTable">
+                <thead>
+                  <tr>
+                    <th>Fault ID</th>
+                    <th>Feeder</th>
+                    <th>Cause & Description</th>
+                    <th>Severity</th>
+                    <th>Reported Time</th>
+                    <th>Status</th>
+                    <th>Assigned Team</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="faultsTableBody">
+                  <tr><td colspan="8" class="text-center">Loading fault records...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: Outage Analysis (BFS Engine) -->
+      <section id="tab-outages" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Breadth-First Search (BFS) Outage Detection Analysis</h3>
+              <p class="section-desc">Multi-source BFS traverses working lines from all active source substations to determine reachability.</p>
+            </div>
+            <button class="btn btn-primary" id="runBfsBtn">🔍 Run Live BFS Scan</button>
+          </div>
+          <div class="card-body">
+            <!-- Outage Overview Banner -->
+            <div id="outageStatusBanner" class="alert-box alert-success">
+              <h4>Grid Connectivity Status</h4>
+              <p id="outageStatusText">Evaluating network connectivity...</p>
+            </div>
+
+            <div class="stats-row">
+              <div class="stat-box">
+                <span class="stat-number" id="bfsActiveSources">0</span>
+                <span class="stat-title">Active Sources</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-number" id="bfsEnergizedNodes">0</span>
+                <span class="stat-title">Energized Nodes</span>
+              </div>
+              <div class="stat-box text-danger">
+                <span class="stat-number text-danger" id="bfsDeenergizedNodes">0</span>
+                <span class="stat-title">De-Energized Nodes</span>
+              </div>
+              <div class="stat-box text-danger">
+                <span class="stat-number text-danger" id="bfsCriticalAffected">0</span>
+                <span class="stat-title">Critical Facilities Cut</span>
+              </div>
+              <div class="stat-box text-danger">
+                <span class="stat-number text-danger" id="bfsConsumersAffected">0</span>
+                <span class="stat-title">Affected Consumers</span>
+              </div>
+            </div>
+
+            <!-- Disconnected Areas List -->
+            <h4 class="mt-4">Disconnected Consumer Areas (De-Energized Zones)</h4>
+            <div class="table-responsive">
+              <table class="data-table" id="disconnectedAreasTable">
+                <thead>
+                  <tr>
+                    <th>Node ID</th>
+                    <th>Area Name</th>
+                    <th>Classification</th>
+                    <th>Critical Facility</th>
+                    <th>Affected Consumers</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="disconnectedAreasTableBody">
+                  <tr><td colspan="6" class="text-center">No disconnected areas. Grid fully energized.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 7: Restoration Priority (Java PriorityQueue) -->
+      <section id="tab-restoration" class="tab-pane">
+        <!-- Educational Policy Card -->
+        <div class="algorithm-card">
+          <div class="algo-header">
+            <span class="algo-badge">Java PriorityQueue Engine</span>
+            <h4>Deterministic Restoration Ranking Policy</h4>
+          </div>
+          <p>Restoration jobs are dynamically ordered by the Java <code>RestorationPolicy</code> Comparator strictly using:</p>
+          <div class="algo-steps">
+            <div class="algo-step">
+              <span class="step-num">1</span>
+              <div>
+                <strong>Critical Facilities Affected</strong>
+                <p>Lifeline services (Hospitals, Water Works, Police) prioritized highest.</p>
+              </div>
+            </div>
+            <div class="algo-step">
+              <span class="step-num">2</span>
+              <div>
+                <strong>Total Affected Consumers</strong>
+                <p>When critical count is tied, higher population density is prioritized.</p>
+              </div>
+            </div>
+            <div class="algo-step">
+              <span class="step-num">3</span>
+              <div>
+                <strong>Earlier Fault Report Order (FIFO)</strong>
+                <p>When impact metrics are identical, the earlier fault is served first.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-4">
+          <div class="card-header">
+            <div>
+              <h3>Restoration Job Queue</h3>
+              <p class="section-desc">Manage crew assignments, track repair status, and energize restored feeder lines.</p>
+            </div>
+            <button class="btn btn-outline" id="recalcQueueBtn">🔄 Recalculate Priorities</button>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="data-table" id="restorationQueueTable">
+                <thead>
+                  <tr>
+                    <th>Priority Rank</th>
+                    <th>Job ID</th>
+                    <th>Target Feeder</th>
+                    <th>Critical Facilities</th>
+                    <th>Affected Consumers</th>
+                    <th>Priority Score</th>
+                    <th>Job Status</th>
+                    <th>Assigned Crew</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="restorationQueueTableBody">
+                  <tr><td colspan="9" class="text-center">Loading restoration queue...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 8: Repair Teams -->
+      <section id="tab-teams" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Field Repair & Maintenance Teams</h3>
+              <p class="section-desc">Monitor crew duty status, dispatch crews, and view active assignments.</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="teams-grid" id="teamsGridContainer">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 9: Approved Backup Connections -->
+      <section id="tab-backups" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Operator-Approved Backup Connections</h3>
+              <p class="section-desc">Predefined alternate routes evaluated using graph reachability from active substations.</p>
+            </div>
+            <button class="btn btn-primary" id="openAddBackupModalBtn">+ Add Backup Route</button>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="data-table" id="backupsTable">
+                <thead>
+                  <tr>
+                    <th>Backup ID</th>
+                    <th>Name & Description</th>
+                    <th>Primary Feeder</th>
+                    <th>Primary Status</th>
+                    <th>Alternate Backup Feeder</th>
+                    <th>Alternate Status</th>
+                    <th>Route Evaluation</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="backupsTableBody">
+                  <tr><td colspan="8" class="text-center">Loading backup routes...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 10: Event History & Audit Log -->
+      <section id="tab-history" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Event History & Restoration Audit Log</h3>
+              <p class="section-desc">Persistent chronological records of grid faults, crew dispatches, line restorations, and topology edits.</p>
+            </div>
+            <button class="btn btn-outline btn-sm" id="refreshHistoryBtn">🔄 Refresh Audit</button>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="data-table" id="historyTable">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Timestamp</th>
+                    <th>Event Type</th>
+                    <th>Target ID</th>
+                    <th>Details & Description</th>
+                    <th>Operator</th>
+                  </tr>
+                </thead>
+                <tbody id="historyTableBody">
+                  <tr><td colspan="6" class="text-center">Loading audit history...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==================== MODALS ==================== -->
+
+  <!-- Modal: Report Feeder Fault -->
+  <div class="modal" id="reportFaultModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Report Feeder Line Failure</h3>
+        <button class="modal-close" data-close="reportFaultModal">&times;</button>
+      </div>
+      <form id="reportFaultForm">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="faultFeederSelect">Target Feeder Line *</label>
+            <select id="faultFeederSelect" class="form-control" required>
+              <option value="">Select a working feeder line...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="faultCauseInput">Fault Cause / Description *</label>
+            <input type="text" id="faultCauseInput" class="form-control" placeholder="e.g. Fallen tree, lightning strike, insulator breakdown" required>
+          </div>
+          <div class="form-group">
+            <label for="faultSeveritySelect">Severity Level *</label>
+            <select id="faultSeveritySelect" class="form-control">
+              <option value="CRITICAL">CRITICAL (Directly feeds hospital or water works)</option>
+              <option value="HIGH" selected>HIGH (Standard distribution line failure)</option>
+              <option value="MEDIUM">MEDIUM (Branch tie-line)</option>
+              <option value="LOW">LOW (Low-load lateral)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="faultNotesInput">Field Notes / Observations</label>
+            <textarea id="faultNotesInput" class="form-control" rows="2" placeholder="Field technician notes, weather conditions, or estimated damage..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="reportFaultModal">Cancel</button>
+          <button type="submit" class="btn btn-danger">File Fault & Trigger BFS</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Assign Repair Team -->
+  <div class="modal" id="assignTeamModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Assign Repair Team to Restoration Job</h3>
+        <button class="modal-close" data-close="assignTeamModal">&times;</button>
+      </div>
+      <form id="assignTeamForm">
+        <input type="hidden" id="assignJobId">
+        <div class="modal-body">
+          <div class="job-info-card" id="assignJobSummary">
+            <!-- Populated via JS -->
+          </div>
+          <div class="form-group mt-3">
+            <label for="assignTeamSelect">Select Available Repair Team *</label>
+            <select id="assignTeamSelect" class="form-control" required>
+              <option value="">Select an available crew...</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="assignTeamModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Confirm Dispatch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Network Node -->
+  <div class="modal" id="addNodeModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Add New Network Node</h3>
+        <button class="modal-close" data-close="addNodeModal">&times;</button>
+      </div>
+      <form id="addNodeForm">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="nodeIdInput">Node ID *</label>
+              <input type="text" id="nodeIdInput" class="form-control" placeholder="e.g. SUB-04 or CONS-10" required>
+            </div>
+            <div class="form-group flex-2">
+              <label for="nodeNameInput">Node Name *</label>
+              <input type="text" id="nodeNameInput" class="form-control" placeholder="e.g. West Suburban Substation" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="nodeTypeSelect">Node Type *</label>
+            <select id="nodeTypeSelect" class="form-control" required>
+              <option value="SUBSTATION">Substation (Power Source / Step-down)</option>
+              <option value="CONSUMER_AREA">Consumer Area (Electrical Load Center)</option>
+            </select>
+          </div>
+
+          <!-- Substation Specific Fields -->
+          <div id="substationFields">
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="substationCapacityInput">Capacity (kVA)</label>
+                <input type="number" id="substationCapacityInput" class="form-control" value="25000">
+              </div>
+              <div class="form-group flex-1">
+                <label for="substationIsSourceSelect">Is Active Source?</label>
+                <select id="substationIsSourceSelect" class="form-control">
+                  <option value="true">Yes (Active Source Substation)</option>
+                  <option value="false">No (Step-down distribution only)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Consumer Area Specific Fields -->
+          <div id="consumerAreaFields" class="hidden">
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="consumerTypeSelect">Classification</label>
+                <select id="consumerTypeSelect" class="form-control">
+                  <option value="GENERAL">General Consumer Area</option>
+                  <option value="CRITICAL">Critical Facility (Hospital / Water / Police)</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label for="consumerCountInput">Consumer Count</label>
+                <input type="number" id="consumerCountInput" class="form-control" value="2500" min="0">
+              </div>
+            </div>
+            <div class="form-group" id="criticalFacilityGroup">
+              <label for="criticalFacilityNameInput">Critical Facility Name</label>
+              <input type="text" id="criticalFacilityNameInput" class="form-control" placeholder="e.g. Regional Medical Center">
+            </div>
+          </div>
+
+          <!-- Coordinates for Visual Map -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="nodeLocX">Map Coordinate X (50 - 750)</label>
+              <input type="number" id="nodeLocX" class="form-control" value="450" min="50" max="800">
+            </div>
+            <div class="form-group flex-1">
+              <label for="nodeLocY">Map Coordinate Y (50 - 600)</label>
+              <input type="number" id="nodeLocY" class="form-control" value="500" min="50" max="650">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="addNodeModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Node</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Feeder Line -->
+  <div class="modal" id="addFeederModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Add Distribution Feeder Line</h3>
+        <button class="modal-close" data-close="addFeederModal">&times;</button>
+      </div>
+      <form id="addFeederForm">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="feederIdInput">Feeder ID *</label>
+              <input type="text" id="feederIdInput" class="form-control" placeholder="e.g. FEED-15" required>
+            </div>
+            <div class="form-group flex-2">
+              <label for="feederNameInput">Feeder Name *</label>
+              <input type="text" id="feederNameInput" class="form-control" placeholder="e.g. Substation to Downtown Tie" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="feederSourceSelect">Source Node *</label>
+              <select id="feederSourceSelect" class="form-control" required>
+                <option value="">Select source...</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label for="feederTargetSelect">Target Node *</label>
+              <select id="feederTargetSelect" class="form-control" required>
+                <option value="">Select target...</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="feederCapacityInput">Capacity (Amps)</label>
+              <input type="number" id="feederCapacityInput" class="form-control" value="500">
+            </div>
+            <div class="form-group flex-1">
+              <label for="feederLengthInput">Length (km)</label>
+              <input type="number" id="feederLengthInput" class="form-control" value="1.5" step="0.1">
+            </div>
+            <div class="form-group flex-1">
+              <label for="feederIsBackupSelect">Designation</label>
+              <select id="feederIsBackupSelect" class="form-control">
+                <option value="false">Standard Line</option>
+                <option value="true">Backup Feeder Line</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="addFeederModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Feeder Line</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Backup Connection -->
+  <div class="modal" id="addBackupModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Configure Approved Backup Connection</h3>
+        <button class="modal-close" data-close="addBackupModal">&times;</button>
+      </div>
+      <form id="addBackupForm">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="backupIdInput">Backup Config ID *</label>
+              <input type="text" id="backupIdInput" class="form-control" placeholder="e.g. BKP-04" required>
+            </div>
+            <div class="form-group flex-2">
+              <label for="backupNameInput">Configuration Name *</label>
+              <input type="text" id="backupNameInput" class="form-control" placeholder="e.g. East Sector Emergency Alternate Feed" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="backupPrimarySelect">Primary Feeder *</label>
+              <select id="backupPrimarySelect" class="form-control" required>
+                <option value="">Select primary feeder...</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label for="backupAlternateSelect">Alternate Backup Feeder *</label>
+              <select id="backupAlternateSelect" class="form-control" required>
+                <option value="">Select alternate feeder...</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="backupDescInput">Description / Operating Rules</label>
+            <input type="text" id="backupDescInput" class="form-control" placeholder="Operational conditions under which this route is approved">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close="addBackupModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register Backup</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
